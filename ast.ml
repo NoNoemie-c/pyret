@@ -26,7 +26,7 @@ and pp_const fmt = function
 and pp_expr fmt = function
 | EConst c -> pp_const fmt c
 | EOp (op, args) -> Format.fprintf fmt "[%s : %a]" (str_of_binop op)
-  (fun f -> List.iter (pp_expr f)) args
+  (fun f -> List.iter (Format.fprintf f "%a, " pp_expr)) args
 
 (* let rec pp_typ fmt = function
   | Tproduct (t1, t2) -> Format.fprintf fmt "%a *@ %a" pp_atom t1 pp_atom t2

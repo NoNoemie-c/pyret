@@ -33,12 +33,16 @@ stmt:
 | e = expr { SExpr e }
 ;
 
-expr:
-| c = CONST { EConst c }
+bexpr:
 | e0 = expr l = nonempty_list(b=binop e=expr { (b, e) }) 
   { let b = fst (List.hd l) in
     if List.exists (fun (a, _) -> a <> b) l then raise LexingError;
     EOp (b, e0::(List.map snd l)) }
+| e0 = expr { e0 }
+
+expr:
+| c = CONST { EConst c }
+| LP e = bexpr RP { e }
 ;
 
 (*%inplace*) binop:

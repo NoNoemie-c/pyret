@@ -8,6 +8,8 @@
   open Lexing
   open Ast
   open Parser
+
+  exception LexingError
 }
 
 let linecomment = "#" [^'\n'] "\n" 
@@ -41,8 +43,8 @@ rule token = parse
 | "and" { AND }
 | "or" { OR }
 
-| '(' { LEFTPAR }
-| ')' { RIGHTPAR }
+| '(' { LP }
+| ')' { RP }
 
 | "var" { VAR }
 | "block:" { BLOCK } 
@@ -55,4 +57,9 @@ rule token = parse
 | "else:" { ELSE }
 | "lam" { LAM }
 | eof { EOF }
-| _ as c { failwith ("illegal character" ^ String.make 1 c) }
+| _ { 
+  let p = lexbuf.lex_curr_p in
+  Printf.eprintf "%d:%d : <$<$ %s $>$> cant be matched to a token\n"
+    p.pos_lnum (p.pos_cnum - p.pos_bol) (Lexing.lexeme lexbuf);
+  raise LexingError
+ }

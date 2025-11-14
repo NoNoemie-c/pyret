@@ -6,4 +6,5 @@
  (infer true))
 
 (executable
- (name pyretc))
+ (name pyretc)
+ (flags (:standard -w -33)))
