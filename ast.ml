@@ -10,12 +10,14 @@ type const =
 | CString of string
 type expr =
 | EConst of const
+| EBlock of block
 | EOp of (binop * expr list)
 and stmt = 
 | SExpr of expr
-type file = stmt list
+and block = stmt list
+type file = block
 
-let rec pp_file fmt = 
+let rec pp_block fmt = 
   List.iter (Format.fprintf fmt "%a\n" pp_stmt)
 and pp_stmt fmt = function
 | SExpr e -> pp_expr fmt e
@@ -27,6 +29,7 @@ and pp_expr fmt = function
 | EConst c -> pp_const fmt c
 | EOp (op, args) -> Format.fprintf fmt "[%s : %a]" (str_of_binop op)
   (fun f -> List.iter (Format.fprintf f "%a, " pp_expr)) args
+| EBlock b -> pp_block fmt b
 
 (* let rec pp_typ fmt = function
   | Tproduct (t1, t2) -> Format.fprintf fmt "%a *@ %a" pp_atom t1 pp_atom t2
@@ -41,4 +44,4 @@ and pp_tvar fmt = function
   | { def = Some t; id } -> Format.fprintf fmt "@[<1>('%d := %a)@]" id pp_typ t
  *)
 
-let print_file = pp_file Format.std_formatter
+let print_file = pp_block Format.std_formatter

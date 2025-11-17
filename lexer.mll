@@ -40,7 +40,7 @@ rule token = parse
 | "-" { MINUS }
 | "*" { TIMES }
 | "/" { SLASH }
-| "and" { AND }
+| "and" { AND } 
 | "or" { OR }
 
 | '(' { LP }

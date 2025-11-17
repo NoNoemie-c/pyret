@@ -30,8 +30,11 @@ file:
 ;
 
 stmt:
-| e = expr { SExpr e }
+| e = bexpr { SExpr e }
 ;
+
+block:
+| l = nonempty_list(stmt) { l }
 
 bexpr:
 | e0 = expr l = nonempty_list(b=binop e=expr { (b, e) }) 
@@ -43,6 +46,7 @@ bexpr:
 expr:
 | c = CONST { EConst c }
 | LP e = bexpr RP { e }
+| BLOCK COLON b = block END { EBlock b }
 ;
 
 (*%inplace*) binop:
