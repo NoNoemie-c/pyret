@@ -8,8 +8,7 @@
   let cdepth = ref 0
 }
 
-let linecomment = "#" [^ '|'] [^ '\n']* "\n" 
-  (* | "#|" ([^ '|']* '|')+ "#"  *)
+let linecomment = "#\n" | "#" [^ '|'] [^ '\n']*
 let whitespace = [' ' '\t' '\n']+
 let digit     = ['0'-'9']
 let integer = ("+" | "-")? digit+
@@ -31,7 +30,8 @@ rule comment = parse
 | eof { Printf.eprintf "unending comment"; raise Error }
 | _ { comment lexbuf }
 and token = parse
-| linecomment | whitespace { token lexbuf }
+| linecomment "\n" | whitespace { token lexbuf }
+| linecomment eof { EOF }
 | "#|" { incr cdepth; comment lexbuf }
 | "|#" { Printf.eprintf "unmatched |#"; raise Error }
 
@@ -51,7 +51,9 @@ and token = parse
 | "->" { ARROW }
 | "| " { BAR }
 
-| '(' { LP } | ')' { RP }
+| " (" { SLP }
+
+| "(" { LP } | ")" { RP }
 
 | "var" { VAR }
 | "block" { BLOCK } 

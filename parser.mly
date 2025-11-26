@@ -9,7 +9,8 @@
 %token <Ast.binop> CMP
 %token <Ast.var> IDENT
 %token EOF
-%token LP RP LA RA LSQ RSQ COMMA EQUAL COLON COLONCOLON COLONEQUAL ARROW DARROW
+%token SLP LP RP LA RA
+%token COMMA EQUAL COLON COLONCOLON COLONEQUAL ARROW DARROW
 %token EQ NEQ LT LEQ GT GEQ PLUS MINUS TIMES SLASH AND OR BAR
 %token BLOCK CASES IF ELSEIF ELSE END FOR FROM FUN LAM VAR
 
@@ -25,9 +26,11 @@ stmt:
 | VAR i=IDENT t=option(COLONCOLON x=typ { x }) EQUAL e=bexpr 
   { SDecl (i, t, e) }
 | i=IDENT COLONEQUAL e=bexpr { SAssign (i, e) } 
+| FUN i=IDENT p=loption(LA l=separated_nonempty_list(COMMA, IDENT) RA { l })
+  f=funbody { SFun (i, p, f) }
 
 block:
-| l=nonempty_list(stmt) { l }
+| l=list(stmt) { l }
 
 bexpr:
 | e0=expr l=nonempty_list(b=binop e=expr { (b, e) }) 
@@ -37,35 +40,51 @@ bexpr:
 | e0=expr { e0 }
 
 ublock:
-| option(BLOCK) COLON b=block { b }
+| COLON b=block { b }
+| BLOCK COLON b=block e=expr { b @ [SExpr e] }
+| BLOCK COLON b=block i=IDENT COLONEQUAL e=bexpr { b @ [SAssign (i, e)] }
 
 typ:
 | LP l=list(typ) DARROW r=typ { TArrow (l, r) }
-| i=IDENT l=option(LA x=separated_nonempty_list(COMMA, typ) RA { x }) 
-{TVar (i, match l with None -> [] | Some x -> x) }
+| i=IDENT l=loption(LA x=separated_nonempty_list(COMMA, typ) RA { x }) 
+{TVar (i, l) }
 
+param:
+| i=IDENT COLONCOLON t=typ { (i, t) }
+
+funbody:
+| LP l=separated_list(COMMA, param) RP DARROW r=typ b=ublock { (l, r, b) }
+
+either (a, b):
+| a { } | b { }
 expr:
 | i=IDENT { EVar i  }
 | c=CONST { EConst c }
 | LP e=bexpr RP { e }
 | BLOCK COLON b=block END { EBlock b }
-| CASES LP t=typ RP e=bexpr option(BLOCK) COLON
-  l=list(BAR i=IDENT p=option(LP x=separated_list(COMMA, IDENT) RP { x }) 
-    DARROW b=block {i, (match p with None -> [] | Some x -> x), b}) END
+| CASES either(LP, SLP) t=typ RP e=bexpr option(BLOCK) COLON
+  l=list(BAR i=IDENT p=loption(LP x=separated_list(COMMA, IDENT) RP { x }) 
+    DARROW b=block {i, p, b}) END
   { ECases (t, e, l) }
 | c=call { c }
 | IF ic=bexpr ib=ublock 
   l=list(ELSEIF eic=bexpr COLON eib=block { (eic, eib) })
   ELSE COLON eb=block END { EIf ((ic, ib)::l, eb) } 
+| LAM f=funbody { ELam f }
+| FOR c=caller LP l=separated_list(COMMA, from) RP ARROW t=typ b=ublock END
+  { ECall (c, ELam (List.map fst l, t, b)::List.map snd l) }
+
+from: 
+| p = param FROM e = expr { (p, e) }
+
+caller: 
+| i=IDENT l=nonempty_list(LP l=separated_list(COMMA, bexpr) RP { l }) 
+  { List.fold_left (fun c ll -> CCall (c, ll)) (CVar i) l }
 
 call:
-| i=IDENT l=nonempty_list(LP l=separated_list(COMMA, bexpr) RP { l }) 
-  { match List.fold_left (fun c ll -> CCall (c, ll)) (CVar i) l with
-    | CCall (k, p) -> ECall (k, p)
-    | _ -> assert false 
-  }
+| c=caller { match c with CCall (k, p) -> ECall (k, p) | _ -> assert false }
 
-(*%inplace*) binop:
+%inline binop:
 | EQ { BEq }
 | NEQ { BNeq }
 | LT { BLt }

@@ -19,10 +19,14 @@ type expr =
 | EVar of var
 | ECall of caller * expr list
 | ECases of typ * expr * (var * var list * block) list
+| ELam of funbody
 and stmt = 
 | SExpr of expr
 | SDecl of var * typ option * expr
 | SAssign of var * expr
+| SFun of var * var list * funbody
+and funbody = param list * typ * block
+and param = var * typ
 and block = stmt list
 and caller = 
 | CVar of var
@@ -45,6 +49,8 @@ and pp_stmt fmt = function
   | None -> ()   | Some tt -> Format.fprintf f " :: %a " pp_typ tt in
   Format.fprintf fmt "var %a :: %a = %a" pp_var i pp_typ_opt t pp_expr e
 | SAssign(i, e) -> Format.fprintf fmt "%s := %a" i pp_expr e
+| SFun (i, l, f) -> Format.fprintf fmt "%a<%a>%a" 
+  pp_var i (pp_separated_list pp_var) l pp_funbody f
 and pp_const fmt = function
 | CBool b -> Format.fprintf fmt (if b then "true" else "false")
 | CInt i -> Format.fprintf fmt "%d" i
@@ -71,6 +77,11 @@ and pp_expr fmt = function
   List.iter (fun (v, vl, b) -> Format.fprintf fmt "| %a(%a) => %a\n" 
     pp_var v (pp_separated_list pp_var) vl pp_block b)
     l
+| ELam f -> Format.fprintf fmt "lam%a" pp_funbody f
+and pp_funbody fmt (p, t, b) =
+  Format.fprintf fmt "(%a) -> %a:\n%a" 
+  (pp_separated_list pp_param) p pp_typ t pp_block b;
+and pp_param fmt (i, t) = Format.fprintf fmt "%a::%a" pp_var i pp_typ t
 and pp_caller fmt = function
 | CVar i -> Format.fprintf fmt "%a" pp_var i
 | CCall (c, l) -> Format.fprintf fmt "%a(%a)" pp_caller c 
