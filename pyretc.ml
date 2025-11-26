@@ -1,6 +1,27 @@
+let parseonly = ref false
+let typeonly = ref false
 
-let () = 
-  open_in Sys.argv.(1) |>
-  Lexing.from_channel |>
-  Parser.file Lexer.token |>
-  Ast.print_file
+let compile p = 
+  
+  try 
+    open_in p |> 
+    Lexing.from_channel |>
+    Parser.file Lexer.token |> 
+    Ast.print_file
+  with 
+  | Parser.Error -> 
+    Printf.eprintf "parsing error\n";
+    exit 1
+  | Lexer.Error -> 
+    exit 1
+
+let () =
+  Arg.parse
+    [
+      "--parse-only", Arg.Set parseonly, "parse the source, without typing and
+        compiling it";
+      "--type-only", Arg.Set typeonly, "parse and type the source, without
+        compiling it";
+    ]
+    compile
+    ""
