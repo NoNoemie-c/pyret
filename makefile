@@ -2,4 +2,9 @@ build:
 	dune build pyretc.exe
 
 clean:
-	rm -r -f _build
+	dune clean
+
+ex:
+	clear
+	dune build pyretc.exe
+	./test -1 _build/default/pyretc.exe

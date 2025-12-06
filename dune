@@ -7,4 +7,5 @@
 
 (executable
  (name pyretc)
+ (promote (until-clean))
  (flags (:standard -w -33)))

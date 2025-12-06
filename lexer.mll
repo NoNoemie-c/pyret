@@ -10,18 +10,19 @@
 
 let linecomment = "#\n" | "#" [^ '|'] [^ '\n']*
 let whitespace = [' ' '\t' '\n']+
+let osef = (whitespace | linecomment)*
 let digit     = ['0'-'9']
 let integer = ("+" | "-")? digit+
 let letter = ['a'-'z' 'A'-'Z' '_']
 let escape = "\\\\" | "\\\'" | "\\\"" | "\\t" | "\\n"
-let string = "\"" ([^'"' '\\'] | escape)* "\"" 
-  | "\'" ([^'\'' '\\'] | escape)* "\'"
+let string = "\"" ([^'"' '\\' '\n'] | escape)* "\"" 
+  | "\'" ([^'\'' '\\' '\n'] | escape)* "\'"
 let ident = letter ("-"* (letter | digit)+)*
 
 rule comment = parse
 | "#|" { 
   incr cdepth; 
-  token lexbuf 
+  comment lexbuf 
 }
 | "|#" { 
   decr cdepth;
@@ -30,33 +31,36 @@ rule comment = parse
 | eof { Printf.eprintf "unending comment"; raise Error }
 | _ { comment lexbuf }
 and token = parse
-| linecomment "\n" | whitespace { token lexbuf }
-| linecomment eof { EOF }
+| osef { token lexbuf }
+| linecomment eof | "#" eof { EOF }
 | "#|" { incr cdepth; comment lexbuf }
 | "|#" { Printf.eprintf "unmatched |#"; raise Error }
 
 | "false" { CONST (CBool false) }
 | "true" { CONST (CBool true)}
 | integer as s { CONST (CInt (int_of_string s)) }
-| string as s { CONST (CString s)}
+| string as s { CONST (CString (String.sub s 1 (String.length s - 1)))}
 
-| " == " { EQ } | " <> " { NEQ }
-| " < " { LT } | " <= " { LEQ } | " > " { GT } | " >= " { GEQ }
-| " + " { PLUS } | " - " { MINUS } | " * " { TIMES } | " / " { SLASH }
-| " and " { AND }  | " or " { OR }
+| " == " { CMP BEq } | " <> " { CMP BNeq }
+| " < " { CMP BLt } | " <= " { CMP BLeq } | " > " { CMP BGt } | " >= " { CMP BGeq }
+| " + " { CMP BAdd } | " - " { CMP BSub } | " * " { CMP BMul } | " / " { CMP BDiv }
+| " and " { CMP BAnd }  | " or " { CMP BOr }
 
-| ":" { COLON } | " := " { COLONEQUAL } | "::" { COLONCOLON }
+| ":" { COLON } | ":=" { COLONEQUAL } | " :: " { COLONCOLON }
+| "," { COMMA } | "=" { EQUAL }
 | " => " { DARROW }
 | "<" { LA } | ">" { RA }
 | "->" { ARROW }
-| "| " { BAR }
+| "|" { BAR }
 
+| ")(" { RPLP }
+| "\n(" { CRLP }
 | " (" { SLP }
 
 | "(" { LP } | ")" { RP }
 
 | "var" { VAR }
-| "block" { BLOCK } 
+| "block:" { BLOCK } 
 | "cases" { CASES }
 | "end" { END } 
 | "for" { FOR }
@@ -64,15 +68,17 @@ and token = parse
 | "fun" { FUN }
 | "if" { IF }
 | "else if" { ELSEIF }
-| "else" { ELSE }
+| "else:" { ELSE }
 | "lam" { LAM }
 
+| ident as i osef ":=" { IDENTCOLONEQUAL i }
+| ident as i "(" { IDENTLP i }
 | ident as i { IDENT i }
 
 | eof { EOF }
 | _ { 
   let p = lexbuf.lex_curr_p in
-  Printf.eprintf "%d:%d : <$<$ %s $>$> cant be matched to a token\n"
+  Printf.eprintf "%d:%d : <$ %s $> cant be matched to a token\n"
     p.pos_lnum (p.pos_cnum - p.pos_bol) (Lexing.lexeme lexbuf);
   raise Error
  }

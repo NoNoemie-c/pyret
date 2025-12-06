@@ -13,6 +13,7 @@ let compile p =
     Printf.eprintf "parsing error\n";
     exit 1
   | Lexer.Error -> 
+    Printf.eprintf "lexing error\n";
     exit 1
 
 let () =

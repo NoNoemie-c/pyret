@@ -47,7 +47,7 @@ and pp_stmt fmt = function
 | SDecl(i, t, e) -> 
   let pp_typ_opt f = function
   | None -> ()   | Some tt -> Format.fprintf f " :: %a " pp_typ tt in
-  Format.fprintf fmt "var %a :: %a = %a" pp_var i pp_typ_opt t pp_expr e
+  Format.fprintf fmt "var %a%a = %a" pp_var i pp_typ_opt t pp_expr e
 | SAssign(i, e) -> Format.fprintf fmt "%s := %a" i pp_expr e
 | SFun (i, l, f) -> Format.fprintf fmt "%a<%a>%a" 
   pp_var i (pp_separated_list pp_var) l pp_funbody f
