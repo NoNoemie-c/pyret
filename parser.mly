@@ -6,7 +6,7 @@
 
 %token <Ast.const> CONST
 %token <Ast.binop> CMP
-%token <Ast.var> IDENT IDENTLP IDENTCOLONEQUAL
+%token <Ast.var> IDENT IDENTLP IDENTCOLONEQUAL IDENTEQUAL IDENTCOLONCOLON
 %token EOF
 %token SLP CRLP LP RP RPLP LA RA LT GT
 %token COMMA EQUAL COLON COLONCOLON COLONEQUAL ARROW DARROW BAR
@@ -18,16 +18,14 @@
 
 file:
 | s=stmt f=file | s=voidstmt f=file
-{ let l = $startpos(s).pos_lnum in
-  if $startpos(f).pos_lnum = l && f <> [] then (
-    Printf.eprintf "two statements on the same line at %d\n" l;
-    exit 1)
-  else s::f }
+{ s::f }
 | EOF { [] }
 
 voidstmt:
-| option(VAR) i=IDENT t=option(COLONCOLON x=typ { x }) EQUAL e=bexpr 
-  { SDecl (i, t, e) }
+| option(VAR) i=IDENTEQUAL e=bexpr 
+  { SDecl (i, None, e) }
+| option(VAR) i=IDENTCOLONCOLON t=typ EQUAL e=bexpr 
+  { SDecl (i, Some t, e) }
 | FUN i=IDENT p=loption(either(LA, LT) l=separated_nonempty_list(COMMA, IDENT) RA { l })
   f=funbody { SFun (i, p, f) }
 stmt:
@@ -37,19 +35,11 @@ stmt:
 voidblock:
 | s=stmt { [s] }
 | s=voidstmt b=block 
-{ let l = $startpos(s).pos_lnum in
-  if $startpos(b).pos_lnum = l then (
-    Printf.eprintf "two statements on the same line at %d\n" l;
-    exit 1)
-  else s::b }
+{ s::b }
 block:
 | s=stmt { [s] }
 | s=stmt b=block | s=voidstmt b=block
-{ let l = $startpos(s).pos_lnum in
-  if $startpos(b).pos_lnum = l then (
-    Printf.eprintf "two statements on the same line at %d\n" l;
-    exit 1)
-  else s::b }
+{ s::b }
 
 bexpr:
 | e0=expr l=nonempty_list(b=binop e=expr { (b, e) }) 
@@ -68,7 +58,7 @@ typ:
 { TVar (i, l) }
 
 param:
-| i=IDENT COLONCOLON t=typ { (i, t) }
+| i=IDENTCOLONCOLON t=typ { (i, t) }
 
 funbody:
 | LP l=separated_list(COMMA, param) RP ARROW r=typ BLOCK b = block END { (l, r, b) }
@@ -107,6 +97,8 @@ from:
 | p = param FROM e = expr { (p, e) }
 
 caller: 
+| IDENT anyLP { exit 1  }
+| i=IDENT { CVar i }
 | i=IDENTLP l=separated_nonempty_list(RPLP, separated_list(COMMA, bexpr)) RP
   { List.fold_left (fun c ll -> CCall (c, ll)) (CVar i) l }
 

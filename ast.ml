@@ -8,6 +8,7 @@ type const =
 | CBool of bool
 | CInt of int
 | CString of string
+| CEmpty
 type typ = 
 | TVar of var * typ list
 | TArrow of typ list * typ
@@ -55,6 +56,7 @@ and pp_const fmt = function
 | CBool b -> Format.fprintf fmt (if b then "true" else "false")
 | CInt i -> Format.fprintf fmt "%d" i
 | CString s -> Format.fprintf fmt "\"%s\"" s
+| CEmpty -> Format.fprintf fmt "empty"
 and pp_expr fmt = function
 | EConst c -> pp_const fmt c
 | EOp (op, args) -> Format.fprintf fmt "[%s : %a]" (str_of_binop op)
@@ -90,7 +92,7 @@ and pp_typ fmt = function
 | TArrow (l, r) -> 
   Format.fprintf fmt "(%a -> %a)" (pp_separated_list pp_typ) l pp_typ r
 | TVar (i, l) -> 
-  Format.fprintf fmt "(%a<%a>)" pp_var i (pp_separated_list pp_typ) l
+  Format.fprintf fmt "%a<%a>" pp_var i (pp_separated_list pp_typ) l
 
 (* let rec pp_typ fmt = function
   | Tproduct (t1, t2) -> Format.fprintf fmt "%a *@ %a" pp_atom t1 pp_atom t2

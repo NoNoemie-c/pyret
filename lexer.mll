@@ -38,11 +38,14 @@ and token = parse
 
 | "false" { CONST (CBool false) }
 | "true" { CONST (CBool true)}
+| "empty" { CONST CEmpty }
 | integer as s { CONST (CInt (int_of_string s)) }
 | string as s { CONST (CString (String.sub s 1 (String.length s - 1)))}
 
+| (integer | ident) "+" integer { Printf.eprintf "+ without spaces"; raise Error }
+| (integer | ident) "-" integer { Printf.eprintf "+ without spaces"; raise Error }
 | " == " { CMP BEq } | " <> " { CMP BNeq }
-| " < " { CMP BLt } | " <= " { CMP BLeq } | " > " { CMP BGt } | " >= " { CMP BGeq }
+| " < " { LT } | " <= " { CMP BLeq } | " > " { GT } | " >= " { CMP BGeq }
 | " + " { CMP BAdd } | " - " { CMP BSub } | " * " { CMP BMul } | " / " { CMP BDiv }
 | " and " { CMP BAnd }  | " or " { CMP BOr }
 
@@ -71,6 +74,8 @@ and token = parse
 | "else:" { ELSE }
 | "lam" { LAM }
 
+| ident as i osef ":: " { IDENTCOLONCOLON i }
+| ident as i osef "=" { IDENTEQUAL i }
 | ident as i osef ":=" { IDENTCOLONEQUAL i }
 | ident as i "(" { IDENTLP i }
 | ident as i { IDENT i }
