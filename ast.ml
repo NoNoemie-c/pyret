@@ -76,7 +76,7 @@ and pp_expr fmt = function
   (pp_separated_list pp_expr) l
 | ECases (t, e, l) ->
   Format.fprintf fmt "cases (%a) %a:\n" pp_typ t pp_expr e;
-  List.iter (fun (v, vl, b) -> Format.fprintf fmt "| %a(%a) => %a\n" 
+  List.iter (fun (v, vl, b) -> Format.fprintf fmt "| %a(%a) => %a" 
     pp_var v (pp_separated_list pp_var) vl pp_block b)
     l
 | ELam f -> Format.fprintf fmt "lam%a" pp_funbody f

@@ -19,8 +19,8 @@
 }
 
 let linecomment = "#\n" | "#" [^ '|'] [^ '\n']*
-let whitespace = [' ' '\t' '\n']+
-let osef = (whitespace | linecomment)*
+let ws = [' ' '\t' '\n']+
+let osef = (ws | linecomment)*
 let digit     = ['0'-'9']
 let integer = ("+" | "-")? digit+
 let letter = ['a'-'z' 'A'-'Z' '_']
@@ -58,22 +58,21 @@ and token = parse
 | " + " { CMP BAdd } | " - " { CMP BSub } | " * " { CMP BMul } | " / " { CMP BDiv }
 | " and " { CMP BAnd }  | " or " { CMP BOr }
 
-| ":" { COLON } | ":=" { COLONEQUAL } | " :: " { COLONCOLON }
+| ":" { COLON } 
 | "," { COMMA } | "=" { EQUAL }
-| " => " { DARROW }
+| "=>" ws { DARROW }
 | "<" { LA } | ">" { RA }
 | "->" { ARROW }
 | "|" { BAR }
 
 | ")(" { RPLP }
-| "\n(" { CRLP }
-| " (" { SLP }
+| ws "(" { SLP }
 
 | "(" { LP } | ")" { RP }
 
 | "var" { VAR }
 | "block:" { BLOCK } 
-| "cases" { CASES }
+| "cases" osef "(" { CASES }
 | "end" { END } 
 | "for" { FOR }
 | "from" { FROM }
@@ -85,7 +84,8 @@ and token = parse
 
 | ident as i osef ":: " { IDENTCOLONCOLON (notkw i) }
 | ident as i osef "=" { IDENTEQUAL (notkw i) }
-| ident as i osef "=>" { IDENTDARROW (notkw i) }
+| ident as i osef "=>\n" | ident as i osef "=> " { IDENTDARROW (notkw i) }
+| ident as i " == " { IDENTEQ (notkw i) }
 | ident as i osef ":=" { IDENTCOLONEQUAL (notkw i) }
 | ident as i "(" { IDENTLP (notkw i) }
 | ident as i { IDENT (notkw i) }

@@ -6,10 +6,11 @@
 
 %token <Ast.const> CONST
 %token <Ast.binop> CMP
-%token <Ast.var> IDENT IDENTLP IDENTCOLONEQUAL IDENTEQUAL IDENTCOLONCOLON IDENTDARROW
+%token <Ast.var> IDENT IDENTLP IDENTCOLONEQUAL IDENTEQUAL 
+  IDENTCOLONCOLON IDENTDARROW IDENTEQ
 %token EOF
-%token SLP CRLP LP RP RPLP LA RA LT GT
-%token COMMA EQUAL COLON COLONCOLON COLONEQUAL ARROW DARROW BAR
+%token SLP LP RP RPLP LA RA LT GT
+%token COMMA EQUAL COLON ARROW DARROW BAR
 %token BLOCK CASES IF ELSEIF ELSE END FOR FROM FUN LAM VAR
 
 %start file
@@ -26,6 +27,8 @@ voidstmt:
   { SDecl (i, None, e) }
 | option(VAR) i=IDENTCOLONCOLON t=typ EQUAL e=bexpr 
   { SDecl (i, Some t, e) }
+| option(VAR) i=IDENTCOLONCOLON t=IDENTEQUAL e=bexpr 
+  { SDecl (i, Some (TVar (t, [])), e) }
 | FUN i=IDENTLP f=funbody { SFun (i, [], f) }
 | FUN i=IDENT either(LA, LT) l=separated_nonempty_list(COMMA, IDENT) RA
   LP f=funbody { SFun (i, l, f) }
@@ -43,10 +46,22 @@ block:
 { s::b }
 
 bexpr:
-| e0=expr l=nonempty_list(b=binop e=expr { (b, e) }) 
-  { let b = fst (List.hd l) in
-    if List.exists (fun (a, _) -> a <> b) l then exit 1;
-    EOp (b, e0::(List.map snd l)) }
+| anyLP e=bexpr RP b=binop anyLP el=bexpr RP 
+| e=expr b=binop anyLP el=bexpr RP { EOp (b, [e; el]) }
+| anyLP e=bexpr RP b=binop el=bexpr 
+| e=expr b=binop el=bexpr{ 
+  match el with 
+  | EOp (bl, l) when bl = b -> EOp (b, e::l) 
+  | EOp _ -> exit 1
+  | ef -> EOp (b, [e; ef])
+}
+| i=IDENTEQ el = bexpr {
+  match el with 
+  | EOp (BEq, l) -> EOp (BEq, EVar i::l) 
+  | EOp _ -> exit 1
+  | ef -> EOp (BEq, [EVar i; ef]) 
+}
+| anyLP e=bexpr RP { e } 
 | e0=expr { e0 }
 
 ublock:
@@ -54,7 +69,7 @@ ublock:
 | BLOCK b=block { b }
 
 typ:
-| LP l=separated_list(COMMA, typ) DARROW r=typ RP { TArrow (l, r) }
+| LP l=separated_list(COMMA, typ) ARROW r=typ RP { TArrow (l, r) }
 | i=IDENT l=loption(LA x=separated_nonempty_list(COMMA, typ) either(GT, RA) { x }) 
 { TVar (i, l) }
 
@@ -68,17 +83,14 @@ funbody:
 either (a, b):
 | a { } | b { }
 anyLP:
-| LP { }
-| SLP { }
-| CRLP { }
+| LP | SLP { }
 expr:
 | c=CONST { EConst c }
-| anyLP e=bexpr RP { e }
 | BLOCK b=block END { EBlock b }
-| CASES anyLP t=typ RP e=bexpr BLOCK
+| CASES t=typ RP e=bexpr BLOCK
   l=list(branch) END
   { ECases (t, e, l) }
-| CASES anyLP t=typ RP e=bexpr COLON
+| CASES t=typ RP e=bexpr COLON
   l=list(voidbranch) END
   { ECases (t, e, l) }
 | c=caller { match c with CCall (k, p) -> ECall (k, p) | CVar i -> EVar i }
@@ -89,7 +101,7 @@ expr:
   l=list(ELSEIF eic=bexpr COLON eib=voidblock { (eic, eib) })
   ELSE eb=voidblock END { EIf ((ic, ib)::l, eb) } 
 | LAM f=funbody { ELam f }
-| FOR c=caller LP l=separated_list(COMMA, from) RP ARROW t=typ b=ublock END
+| FOR c=callerLP l=separated_list(COMMA, from) RP ARROW t=typ b=ublock END
   { ECall (c, ELam (List.map fst l, t, b)::List.map snd l) }
 
 branch:
@@ -102,11 +114,15 @@ voidbranch:
     DARROW b=voidblock {i, p, b}
 
 from: 
-| p = param FROM e = expr { (p, e) }
+| p=param FROM e=bexpr { (p, e) }
 
 caller:
 | i=IDENT { CVar i }
 | i=IDENTLP l=separated_nonempty_list(RPLP, separated_list(COMMA, bexpr)) RP
+  { List.fold_left (fun c ll -> CCall (c, ll)) (CVar i) l }
+callerLP:
+| i=IDENTLP { CVar i }
+| i=IDENTLP l=separated_nonempty_list(RPLP, separated_list(COMMA, bexpr)) RPLP
   { List.fold_left (fun c ll -> CCall (c, ll)) (CVar i) l }
 
 binop:

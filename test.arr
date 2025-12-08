@@ -1,2 +1,3 @@
-
-cases (a) x:  end
+cases(e) r :
+| link(a, b) => 1
+end
