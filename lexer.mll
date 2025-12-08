@@ -6,6 +6,16 @@
   exception Error
 
   let cdepth = ref 0
+  let keywords = Hashtbl.create 17
+  let () = 
+    List.iter (fun x -> Hashtbl.add keywords x ()) ["var" ; "block"; "cases"; 
+    "end"; "for"; "from"; "fun"; "if"; "else if"; "else"; "lam"; "true"; 
+    "false"]
+  let notkw s =
+    if Hashtbl.mem keywords s then begin
+      Printf.eprintf "unexpected keyword < %s >\n" s;
+      raise Error
+    end else s
 }
 
 let linecomment = "#\n" | "#" [^ '|'] [^ '\n']*
@@ -38,12 +48,11 @@ and token = parse
 
 | "false" { CONST (CBool false) }
 | "true" { CONST (CBool true)}
-| "empty" { CONST CEmpty }
 | integer as s { CONST (CInt (int_of_string s)) }
 | string as s { CONST (CString (String.sub s 1 (String.length s - 1)))}
 
 | (integer | ident) "+" integer { Printf.eprintf "+ without spaces"; raise Error }
-| (integer | ident) "-" integer { Printf.eprintf "+ without spaces"; raise Error }
+| (integer | ident) "-" integer { Printf.eprintf "_ without spaces"; raise Error }
 | " == " { CMP BEq } | " <> " { CMP BNeq }
 | " < " { LT } | " <= " { CMP BLeq } | " > " { GT } | " >= " { CMP BGeq }
 | " + " { CMP BAdd } | " - " { CMP BSub } | " * " { CMP BMul } | " / " { CMP BDiv }
@@ -72,13 +81,14 @@ and token = parse
 | "if" { IF }
 | "else if" { ELSEIF }
 | "else:" { ELSE }
-| "lam" { LAM }
+| "lam(" { LAM }
 
-| ident as i osef ":: " { IDENTCOLONCOLON i }
-| ident as i osef "=" { IDENTEQUAL i }
-| ident as i osef ":=" { IDENTCOLONEQUAL i }
-| ident as i "(" { IDENTLP i }
-| ident as i { IDENT i }
+| ident as i osef ":: " { IDENTCOLONCOLON (notkw i) }
+| ident as i osef "=" { IDENTEQUAL (notkw i) }
+| ident as i osef "=>" { IDENTDARROW (notkw i) }
+| ident as i osef ":=" { IDENTCOLONEQUAL (notkw i) }
+| ident as i "(" { IDENTLP (notkw i) }
+| ident as i { IDENT (notkw i) }
 
 | eof { EOF }
 | _ { 

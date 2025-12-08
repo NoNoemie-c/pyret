@@ -6,7 +6,7 @@
 
 %token <Ast.const> CONST
 %token <Ast.binop> CMP
-%token <Ast.var> IDENT IDENTLP IDENTCOLONEQUAL IDENTEQUAL IDENTCOLONCOLON
+%token <Ast.var> IDENT IDENTLP IDENTCOLONEQUAL IDENTEQUAL IDENTCOLONCOLON IDENTDARROW
 %token EOF
 %token SLP CRLP LP RP RPLP LA RA LT GT
 %token COMMA EQUAL COLON COLONCOLON COLONEQUAL ARROW DARROW BAR
@@ -26,8 +26,9 @@ voidstmt:
   { SDecl (i, None, e) }
 | option(VAR) i=IDENTCOLONCOLON t=typ EQUAL e=bexpr 
   { SDecl (i, Some t, e) }
-| FUN i=IDENT p=loption(either(LA, LT) l=separated_nonempty_list(COMMA, IDENT) RA { l })
-  f=funbody { SFun (i, p, f) }
+| FUN i=IDENTLP f=funbody { SFun (i, [], f) }
+| FUN i=IDENT either(LA, LT) l=separated_nonempty_list(COMMA, IDENT) RA
+  LP f=funbody { SFun (i, l, f) }
 stmt:
 | i=IDENTCOLONEQUAL e=bexpr { SAssign (i, e) } 
 | e=bexpr { SExpr e }
@@ -61,8 +62,8 @@ param:
 | i=IDENTCOLONCOLON t=typ { (i, t) }
 
 funbody:
-| LP l=separated_list(COMMA, param) RP ARROW r=typ BLOCK b = block END { (l, r, b) }
-| LP l=separated_list(COMMA, param) RP ARROW r=typ COLON b = voidblock END { (l, r, b) }
+| l=separated_list(COMMA, param) RP ARROW r=typ BLOCK b = block END { (l, r, b) }
+| l=separated_list(COMMA, param) RP ARROW r=typ COLON b = voidblock END { (l, r, b) }
 
 either (a, b):
 | a { } | b { }
@@ -74,13 +75,11 @@ expr:
 | c=CONST { EConst c }
 | anyLP e=bexpr RP { e }
 | BLOCK b=block END { EBlock b }
-| CASES anyLP t=typ RP e=bexpr COLON
-  l=list(BAR i=IDENT p=loption(LP x=separated_list(COMMA, IDENT) RP { x }) 
-    DARROW b=voidblock {i, p, b}) END
-  { ECases (t, e, l) }
 | CASES anyLP t=typ RP e=bexpr BLOCK
-  l=list(BAR i=IDENT p=loption(LP x=separated_list(COMMA, IDENT) RP { x }) 
-    DARROW b=block {i, p, b}) END
+  l=list(branch) END
+  { ECases (t, e, l) }
+| CASES anyLP t=typ RP e=bexpr COLON
+  l=list(voidbranch) END
   { ECases (t, e, l) }
 | c=caller { match c with CCall (k, p) -> ECall (k, p) | CVar i -> EVar i }
 | IF ic=bexpr BLOCK ib=block 
@@ -93,11 +92,19 @@ expr:
 | FOR c=caller LP l=separated_list(COMMA, from) RP ARROW t=typ b=ublock END
   { ECall (c, ELam (List.map fst l, t, b)::List.map snd l) }
 
+branch:
+| BAR i=IDENTDARROW b=block {i, [], b}
+| BAR i=IDENTLP p=separated_nonempty_list(COMMA, IDENT) RP
+    DARROW b=block {i, p, b}
+voidbranch:
+| BAR i=IDENTDARROW b=voidblock {i, [], b}
+| BAR i=IDENTLP p=separated_nonempty_list(COMMA, IDENT) RP
+    DARROW b=voidblock {i, p, b}
+
 from: 
 | p = param FROM e = expr { (p, e) }
 
-caller: 
-| IDENT anyLP { exit 1  }
+caller:
 | i=IDENT { CVar i }
 | i=IDENTLP l=separated_nonempty_list(RPLP, separated_list(COMMA, bexpr)) RP
   { List.fold_left (fun c ll -> CCall (c, ll)) (CVar i) l }

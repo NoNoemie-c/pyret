@@ -2,7 +2,6 @@ let parseonly = ref false
 let typeonly = ref false
 
 let compile p = 
-  
   try 
     open_in p |> 
     Lexing.from_channel |>
