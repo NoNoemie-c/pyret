@@ -19,7 +19,7 @@ let rec ttyp_of_typ = function
 | TVar ("List", [a]) -> TTList (ttyp_of_typ a)
 | TArrow (l, r) -> TTArrow (List.map ttyp_of_typ l, ttyp_of_typ r)
 | TVar (v, _) -> 
-  Printf.eprintf "unknown type or incorrect type arguments for %s" v; raise Error
+  Printf.eprintf "unknown type or incorrect type arguments for %s\n" v; raise Error
   
 exception UnificationFailure of typ * typ
 let unification_error t1 t2 = raise (UnificationFailure (canon t1, canon t2))
@@ -100,7 +100,7 @@ let add gen x t b e =
 module Vmap = Map.Make(V)
 
 let find s e =
-  let scheme = try fst (Smap.find s e.bindings) with Not_found -> failwith "hm" in
+  let scheme = fst (Smap.find s e.bindings) in
   let m = Vset.fold (fun v vm -> Vmap.add v (V.create ()) vm) scheme.vars Vmap.empty in
   let rec refresh = function
   | TTArrow (a, b) -> TTArrow (List.map refresh a, refresh b)
@@ -142,11 +142,12 @@ let rec w e = function
 | ECall (CVar f, l) -> begin match (try find f e with Not_found -> 
     Printf.eprintf "unbound variable %s\n" f; raise Error) with
   | TTArrow (lt, rt) -> let ll = List.map (w e) l in
-    (try List.iter2 unify_lt lt (List.map (fun x -> x.t) ll)
+    (try List.iter2 unify_lt (List.map (fun x -> x.t) ll) lt
     with Invalid_argument _ -> Printf.eprintf "incorrect number of arguments for %s\n" f; raise Error);
     { e=TECall (TCVar f, ll); t=rt } 
     (* ecall ccall !! *)
-  | _ -> Printf.eprintf "%s should have an arrow type\n" f; raise Error end
+  | _ -> Printf.eprintf "%s should have an arrow type\n" f; raise Error 
+end
 | ECases (TVar ("List", [a]), c, ["empty", [], eb; "link", [x; y], lb])
 | ECases (TVar ("List", [a]), c, ["link", [x; y], lb; "empty", [], eb]) -> 
   let aa = ttyp_of_typ a in
@@ -164,8 +165,7 @@ let rec w e = function
   let bb, bt = checkblock ee b in
   unify_lt bt tt;
   { e=TELam (ppl, bb); t=TTArrow (List.map snd ppl, tt) }
-| _ -> 
-  Printf.eprintf "TODO"; raise Error
+| _ -> Printf.eprintf "TODO\n"; raise Error
 and checkblock e b = match b with
 | [] -> assert false
 | [s] -> let ss, _ = checkstmt e s in
@@ -181,7 +181,7 @@ and checkstmt e = function
   | None -> ()
   | Some a -> unify_lt s.t (ttyp_of_typ a)
   end;
-  TSDecl (x, s), add false x s.t b e
+  TSDecl (x, s), add (not b) x s.t b e
 | SAssign (x, ex) ->
   begin try let s = w e ex in 
     if snd (Smap.find x e.bindings) then begin
