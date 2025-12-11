@@ -23,12 +23,12 @@ file:
 | EOF { [] }
 
 voidstmt:
-| option(VAR) i=IDENTEQUAL e=bexpr 
-  { SDecl (i, None, e) }
-| option(VAR) i=IDENTCOLONCOLON t=typ EQUAL e=bexpr 
-  { SDecl (i, Some t, e) }
-| option(VAR) i=IDENTCOLONCOLON t=IDENTEQUAL e=bexpr 
-  { SDecl (i, Some (TVar (t, [])), e) }
+| b=boption(VAR) i=IDENTEQUAL e=bexpr 
+  { SDecl (b, i, None, e) }
+| b=boption(VAR) i=IDENTCOLONCOLON t=typ EQUAL e=bexpr 
+  { SDecl (b, i, Some t, e) }
+| b=boption(VAR) i=IDENTCOLONCOLON t=IDENTEQUAL e=bexpr 
+  { SDecl (b, i, Some (TVar (t, [])), e) }
 | FUN i=IDENTLP f=funbody { SFun (i, [], f) }
 | FUN i=IDENT either(LA, LT) l=separated_nonempty_list(COMMA, IDENT) RA
   LP f=funbody { SFun (i, l, f) }

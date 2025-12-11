@@ -46,17 +46,17 @@ and token = parse
 | "#|" { incr cdepth; comment lexbuf }
 | "|#" { Printf.eprintf "unmatched |#"; raise Error }
 
-| "false" { CONST (CBool false) }
-| "true" { CONST (CBool true)}
-| integer as s { CONST (CInt (int_of_string s)) }
-| string as s { CONST (CString (String.sub s 1 (String.length s - 1)))}
+| "false" { CONST (CBoolean false) }
+| "true" { CONST (CBoolean true)}
+| integer as s { CONST (CNumber (int_of_string s)) }
+| string as s { CONST (CString (String.sub s 1 (String.length s - 2)))}
 
-| (integer | ident) "+" integer { Printf.eprintf "+ without spaces"; raise Error }
-| (integer | ident) "-" integer { Printf.eprintf "_ without spaces"; raise Error }
-| " == " { CMP BEq } | " <> " { CMP BNeq }
-| " < " { LT } | " <= " { CMP BLeq } | " > " { GT } | " >= " { CMP BGeq }
-| " + " { CMP BAdd } | " - " { CMP BSub } | " * " { CMP BMul } | " / " { CMP BDiv }
-| " and " { CMP BAnd }  | " or " { CMP BOr }
+| ws"=="ws { CMP BEq } | ws"<>"ws { CMP BNeq }
+| ws"<"ws { LT } | ws"<="ws { CMP BLeq } 
+| ws">"ws { GT } | ws">="ws { CMP BGeq }
+| ws"+"ws { CMP BAdd } | ws"-"ws { CMP BSub } 
+| ws"*"ws { CMP BMul } | ws"/"ws { CMP BDiv }
+| ws"and"ws { CMP BAnd }  | ws"or"ws { CMP BOr }
 
 | ":" { COLON } 
 | "," { COMMA } | "=" { EQUAL }
@@ -66,7 +66,7 @@ and token = parse
 | "|" { BAR }
 
 | ")(" { RPLP }
-| ws "(" { SLP }
+| ws"(" { SLP }
 
 | "(" { LP } | ")" { RP }
 
