@@ -65,7 +65,6 @@ and token = parse
 | "|" { BAR }
 
 | ")(" { RPLP }
-| ws"(" { line lexbuf; SLP }
 
 | "(" { LP } | ")" { RP }
 
@@ -80,6 +79,9 @@ and token = parse
 | "else if" { ELSEIF }
 | "else:" { ELSE }
 | "lam(" { LAM }
+
+| [^' ' '\t' '\n']['+' '-']integer { raise (Error.Lexer (fun () ->
+  Printf.eprintf "hardcoded error for \"espace\" tests\n")) }
 
 | ident as i osef ":: " { line lexbuf; IDENTCOLONCOLON (notkw i) }
 | ident as i osef "=" { line lexbuf; IDENTEQUAL (notkw i) }

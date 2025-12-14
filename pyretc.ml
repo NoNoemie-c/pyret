@@ -8,7 +8,7 @@ let compile p =
     Parser.file Lexer.token lb |>
     if !parseonly then Ast.print_file 
     else (fun a -> Typer.w a |>
-      if !typeonly then Tast.print_file else Producer.emit)
+      if !typeonly then Tast.print_file else Emiter.code)
   with 
   | Error.Lexer f -> 
     let sp = Lexing.lexeme_start_p lb in

@@ -4,9 +4,11 @@
   open Lexing
 
   let sep_stmt ep1 sp2 =
-    if ep1.pos_lnum = sp2.pos_lnum then
-      raise (Error.Parser (ep1, sp2, fun () ->
-        Printf.eprintf "can't have two statements on the same line\n"))
+    if ep1.pos_lnum = sp2.pos_lnum then ()
+      (* raise (Error.Parser (ep1, sp2, fun () ->
+        Printf.eprintf "can't have two statements on the same line\n")) *)
+    (* commenté car pour l'instant n'est pas assez précis et bloque des cas 
+      corrects *)
 %}
 
 %token <Ast.const> CONST
@@ -14,7 +16,7 @@
 %token <Ast.var> IDENT IDENTLP IDENTCOLONEQUAL IDENTEQUAL 
   IDENTCOLONCOLON IDENTDARROW IDENTEQ
 %token EOF
-%token SLP LP RP RPLP LA RA LT GT
+%token LP RP RPLP LA RA LT GT
 %token COMMA EQUAL COLON ARROW DARROW BAR
 %token BLOCK CASES IF ELSEIF ELSE END FOR FROM FUN LAM VAR
 
@@ -50,11 +52,9 @@ block:
 | s=stmt b=block | s=voidstmt b=block
 { sep_stmt $endpos(s) $startpos(b); s::b }
 
-bexpr:
-| anyLP e=bexpr RP b=binop anyLP el=bexpr RP 
-| e=expr b=binop anyLP el=bexpr RP { { x=EOp (b, [e; el]); sp=$startpos; ep=$endpos } }
-| anyLP e=bexpr RP b=binop el=bexpr 
-| e=expr b=binop el=bexpr{ {
+opexpr:
+| e=expr b=binop LP el=opexpr RP { { x=EOp (b, [e; el]); sp=$startpos; ep=$endpos } }
+| e=expr b=binop el=bexpr { {
   x=(match el.x with 
   | EOp (bl, l) when bl = b -> EOp (b, e::l) 
   | EOp _ -> raise (Error.Parser ($startpos(el), $endpos(el), fun () ->
@@ -70,8 +70,9 @@ bexpr:
   | _ -> EOp (BEq, [{ x=EVar i; sp=$startpos(i); ep=$endpos(i) }; el]));
   sp=$startpos; ep=$endpos 
 } }
-| anyLP e=bexpr RP { e } 
-| e0=expr { e0 }
+
+bexpr:
+| e=opexpr | e=expr { e }
 
 ublock:
 | COLON b=voidblock { b }
@@ -91,10 +92,9 @@ funbody:
 
 either (a, b):
 | a { } | b { }
-anyLP:
-| LP | SLP { }
 expr:
 | c=CONST { { x=EConst c; sp=$startpos; ep=$endpos } }
+| LP e=opexpr RP { e }
 | BLOCK b=block END { { x=EBlock b; sp=$startpos; ep=$endpos } }
 | CASES t=typ RP e=bexpr BLOCK
   l=list(branch) END
@@ -102,7 +102,7 @@ expr:
 | CASES t=typ RP e=bexpr COLON
   l=list(voidbranch) END
   { { x=ECases (t, e, l); sp=$startpos; ep=$endpos } }
-| c=caller { { x=(match c.x with CCall (k, p) -> ECall (k, p) | CVar i -> EVar i); sp=$startpos; ep=$endpos } }
+| c=call { { x=(match c.x with CCall (k, p) -> ECall (k, p) | CVar i -> EVar i); sp=$startpos; ep=$endpos } }
 | IF ic=bexpr BLOCK ib=block 
   l=list(ELSEIF eic=bexpr COLON eib=block { (eic, eib) })
   ELSE eb=block END { { x=EIf ((ic, ib)::l, eb); sp=$startpos; ep=$endpos } }
@@ -110,7 +110,7 @@ expr:
   l=list(ELSEIF eic=bexpr COLON eib=voidblock { (eic, eib) })
   ELSE eb=voidblock END { { x=EIf ((ic, ib)::l, eb); sp=$startpos; ep=$endpos } } 
 | LAM f=funbody { { x=ELam f; sp=$startpos; ep=$endpos } }
-| FOR c=callerLP l=separated_list(COMMA, from) RP ARROW t=typ b=ublock END
+| FOR c=callLP l=separated_list(COMMA, from) RP ARROW t=typ b=ublock END
   { { x=ECall (c, 
     { x=ELam (List.map fst l, t, b); sp=$startpos(c); ep=$endpos(c) }::List.map snd l); sp=$startpos; ep=$endpos } }
 
@@ -126,13 +126,13 @@ voidbranch:
 from: 
 | p=param FROM e=bexpr { (p, e) }
 
-caller:
+call:
 | i=IDENT { { x=CVar i; sp=$startpos(i); ep=$endpos(i) } }
 | i=IDENTLP l=separated_nonempty_list(RPLP, separated_list(COMMA, bexpr)) RP
   { { x=List.fold_left (fun c ll -> CCall ({ x=c; sp=$startpos(l); ep=$endpos(l)}, ll)) (CVar i) l; sp=$startpos; ep=$endpos } }
-callerLP:
+callLP:
 | i=IDENTLP { { x=CVar i; sp=$startpos(i); ep=$endpos(i) } }
-| i=IDENTLP l=separated_nonempty_list(RPLP, separated_list(COMMA, bexpr)) RPLP
+| i=IDENTLP l=nonempty_list(s=separated_list(COMMA, bexpr) RPLP { s })
   { { x=List.fold_left (fun c ll -> CCall ({ x=c; sp=$startpos(l); ep=$endpos(l)}, ll)) (CVar i) l; sp=$startpos; ep=$endpos } }
 
 binop:
