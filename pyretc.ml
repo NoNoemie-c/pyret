@@ -18,7 +18,7 @@ let compile p =
     f ();
     exit 1
   | Parser.Error -> (* the default menhir error *)
-    Printf.eprintf "parsing error\n";
+    Printf.eprintf "File \"%s\", line -1, characters -1--1:\nparsing error\n" p;
     exit 1
   | Error.Parser (sp, ep, f) -> 
     Printf.eprintf "File \"%s\", line %d, characters %d-%d:\n"

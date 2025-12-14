@@ -179,10 +179,22 @@ let rec wexpr env e = match e.x with
     with Invalid_argument _ -> raise (Error.Typer (e.sp, e.ep, fun () -> 
       Printf.eprintf "incorrect number of arguments for %s\n" f))
     end
-    (* ecall ccall !! *)
   | _ -> raise (Error.Typer (e.sp, e.ep, fun () -> 
     Printf.eprintf "%s should have an arrow type\n" f)) 
-end
+  end
+| ECall ({ x=CCall (c, p); sp=sp; ep=ep }, l) -> 
+  let ec = wexpr env ({ x=ECall (c, p); sp=sp; ep=ep }) in
+  begin match ec with
+  | { e=TECall (cc, pp); t=TTArrow (lt, rt) } -> let ll = List.map (wexpr env) l in
+    begin try 
+      List.iter2 (unify_lt env true) (List.map (fun x -> x.t) ll) lt;
+      { e=TECall (TCCall (cc, pp), ll); t=rt } 
+    with Invalid_argument _ -> raise (Error.Typer (e.sp, e.ep, fun () -> 
+      Printf.eprintf "incorrect number of arguments for call\n"))
+    end
+  | _ -> raise (Error.Typer (e.sp, e.ep, fun () -> 
+    Printf.eprintf "expr should have an arrow type\n")) 
+  end
 | ECases ({ x=TVar ("List", [a]); sp=_; ep=_ }, c, ["empty", [], eb; "link", [x; y], lb])
 | ECases ({ x=TVar ("List", [a]); sp=_; ep=_ }, c, ["link", [x; y], lb; "empty", [], eb]) -> 
   let aa = ttyp_of_typ env a in
@@ -201,7 +213,7 @@ end
   unify_lt env true bt tt;
   { e=TELam (ppl, bb); t=TTArrow (List.map snd ppl, tt) }
 | _ -> raise (Error.Typer (e.sp, e.ep, fun () -> 
-  Printf.eprintf "TODO\n"))
+  Printf.eprintf "unrecognised expression\n"))
 and wblock env = function
 | [] -> assert false
 | [s] -> let ss, _ = wstmt env s in

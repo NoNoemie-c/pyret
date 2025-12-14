@@ -2,6 +2,11 @@
 %{
   open Ast
   open Lexing
+
+  let sep_stmt ep1 sp2 =
+    if ep1.pos_lnum = sp2.pos_lnum then
+      raise (Error.Parser (ep1, sp2, fun () ->
+        Printf.eprintf "can't have two statements on the same line\n"))
 %}
 
 %token <Ast.const> CONST
@@ -19,7 +24,7 @@
 
 file:
 | s=stmt f=file | s=voidstmt f=file
-{ s::f }
+{ sep_stmt $endpos(s) $startpos(f); s::f }
 | EOF { [] }
 
 voidstmt:
@@ -39,11 +44,11 @@ stmt:
 voidblock:
 | s=stmt { [s] }
 | s=voidstmt b=block 
-{ s::b }
+{ sep_stmt $endpos(s) $startpos(b); s::b }
 block:
 | s=stmt { [s] }
 | s=stmt b=block | s=voidstmt b=block
-{ s::b }
+{ sep_stmt $endpos(s) $startpos(b); s::b }
 
 bexpr:
 | anyLP e=bexpr RP b=binop anyLP el=bexpr RP 
@@ -52,14 +57,16 @@ bexpr:
 | e=expr b=binop el=bexpr{ {
   x=(match el.x with 
   | EOp (bl, l) when bl = b -> EOp (b, e::l) 
-  | EOp _ -> exit 1
+  | EOp _ -> raise (Error.Parser ($startpos(el), $endpos(el), fun () ->
+    Printf.eprintf "operator doesnt match the one found on its left"))
   | _ -> EOp (b, [e; el]));
   sp=$startpos; ep=$endpos 
 } }
 | i=IDENTEQ el = bexpr { {
   x=(match el.x with 
   | EOp (BEq, l) -> EOp (BEq, { x=EVar i; sp=$startpos(i); ep=$endpos(i) }::l) 
-  | EOp _ -> exit 1
+  | EOp _ -> raise (Error.Parser ($startpos(el), $endpos(el), fun () ->
+    Printf.eprintf "operator doesnt match the one found on its left"))
   | _ -> EOp (BEq, [{ x=EVar i; sp=$startpos(i); ep=$endpos(i) }; el]));
   sp=$startpos; ep=$endpos 
 } }
