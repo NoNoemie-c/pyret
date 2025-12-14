@@ -1,4 +1,6 @@
 
+type 'a withpos = { x: 'a; sp: Lexing.position; ep: Lexing.position }
+
 type binop =
 | BEq | BNeq | BLt | BLeq | BGt | BGeq | BAdd | BSub | BMul | BDiv | BAnd | BOr
 type var = string (* pour l'instant *)
@@ -7,27 +9,27 @@ type const =
 | CNumber of int
 | CString of string
 type typ = 
-| TVar of var * typ list
-| TArrow of typ list * typ
+| TVar of var * typ withpos list
+| TArrow of typ withpos list * typ withpos
 type expr =
 | EConst of const
 | EBlock of block
-| EOp of binop * expr list
-| EIf of (expr * block) list * block
+| EOp of binop * expr withpos list
+| EIf of (expr withpos * block) list * block
 | EVar of var
-| ECall of caller * expr list
-| ECases of typ * expr * (var * var list * block) list
+| ECall of caller withpos * expr withpos list
+| ECases of typ withpos * expr withpos * (var * var list * block) list
 | ELam of funbody
 and stmt = 
-| SExpr of expr
-| SDecl of bool * var * typ option * expr
-| SAssign of var * expr
+| SExpr of expr withpos
+| SDecl of bool * var * typ withpos option * expr withpos
+| SAssign of var * expr withpos
 | SFun of var * var list * funbody
-and funbody = (var * typ) list * typ * block
-and block = stmt list
+and funbody = (var * typ withpos) list * typ withpos * block
+and block = stmt withpos list
 and caller = 
 | CVar of var
-| CCall of caller * expr list
+| CCall of caller withpos * expr withpos list
 type file = block
 
 let str_of_binop = function
@@ -42,9 +44,9 @@ let rec pp_separated_list pp fmt = function
   Format.fprintf fmt ", ";
   pp_separated_list pp fmt ll 
 let rec pp_block fmt = 
-  List.iter (Format.fprintf fmt "%a\n" pp_stmt)
+  List.iter (fun s -> Format.fprintf fmt "%a\n" pp_stmt s)
 and pp_var fmt = Format.fprintf fmt "%s"
-and pp_stmt fmt = function
+and pp_stmt fmt s = match s.x with
 | SExpr e -> pp_expr fmt e
 | SDecl(b, i, t, e) -> 
   let pp_typ_opt f = function
@@ -57,10 +59,10 @@ and pp_const fmt = function
 | CBoolean b -> Format.fprintf fmt (if b then "true" else "false")
 | CNumber i -> Format.fprintf fmt "%d" i
 | CString s -> Format.fprintf fmt "\"%s\"" s
-and pp_expr fmt = function
+and pp_expr fmt e = match e.x with
 | EConst c -> pp_const fmt c
 | EOp (op, args) -> Format.fprintf fmt "[%s : %a]" (str_of_binop op)
-  (pp_separated_list pp_expr) args
+  (pp_separated_list (fun fmt e -> pp_expr fmt e)) args
 | EBlock b -> pp_block fmt b
 | EIf (l, eb) ->
   let ic, ib = List.hd l in
@@ -73,7 +75,7 @@ and pp_expr fmt = function
   Format.fprintf fmt "end"
 | EVar i -> Format.fprintf fmt "%a" pp_var i
 | ECall (c, l) -> Format.fprintf fmt "%a(%a)" pp_caller c 
-  (pp_separated_list pp_expr) l
+  (pp_separated_list (fun fmt e -> pp_expr fmt e)) l
 | ECases (t, e, l) ->
   Format.fprintf fmt "cases (%a) %a:\n" pp_typ t pp_expr e;
   List.iter (fun (v, vl, b) -> Format.fprintf fmt "| %a(%a) => %a" 
@@ -84,11 +86,11 @@ and pp_funbody fmt (p, t, b) =
   Format.fprintf fmt "(%a) -> %a:\n%a" 
   (pp_separated_list pp_param) p pp_typ t pp_block b;
 and pp_param fmt (i, t) = Format.fprintf fmt "%a::%a" pp_var i pp_typ t
-and pp_caller fmt = function
+and pp_caller fmt c = match c.x with
 | CVar i -> Format.fprintf fmt "%a" pp_var i
 | CCall (c, l) -> Format.fprintf fmt "%a(%a)" pp_caller c 
   (pp_separated_list pp_expr) l
-and pp_typ fmt = function
+and pp_typ fmt t = match t.x with
 | TArrow (l, r) -> 
   Format.fprintf fmt "(%a -> %a)" (pp_separated_list pp_typ) l pp_typ r
 | TVar (i, l) -> 

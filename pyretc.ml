@@ -1,23 +1,34 @@
 let parseonly = ref false
 let typeonly = ref false
 
-let compile p = 
-  try 
-    open_in p |> 
-    Lexing.from_channel |>
-    Parser.file Lexer.token |> 
+
+let compile p =  
+  let lb = Lexing.from_channel (open_in p) in
+  try
+    Parser.file Lexer.token lb |>
     if !parseonly then Ast.print_file 
-    else (fun a -> Typer.check a |>
+    else (fun a -> Typer.w a |>
       if !typeonly then Tast.print_file else Producer.emit)
   with 
-  | Parser.Error -> 
+  | Error.Lexer f -> 
+    let sp = Lexing.lexeme_start_p lb in
+    let ep = Lexing.lexeme_end_p lb in
+    Printf.eprintf "File \"%s\", line %d, characters %d-%d:\n"
+      p sp.pos_lnum sp.pos_cnum ep.pos_cnum;
+    f ();
+    exit 1
+  | Parser.Error -> (* the default menhir error *)
     Printf.eprintf "parsing error\n";
     exit 1
-  | Lexer.Error -> 
-    Printf.eprintf "lexing error\n";
+  | Error.Parser (sp, ep, f) -> 
+    Printf.eprintf "File \"%s\", line %d, characters %d-%d:\n"
+      p sp.pos_lnum sp.pos_cnum ep.pos_cnum;
+    f ();
     exit 1
-  | Typer.Error ->
-    Printf.eprintf "typing error\n";
+  | Error.Typer (sp, ep, f) ->
+    Printf.eprintf "File \"%s\", line %d, characters %d-%d:\n"
+      p sp.pos_lnum sp.pos_cnum ep.pos_cnum;
+    f ();
     exit 1
 
 let () =

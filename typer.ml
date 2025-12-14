@@ -1,7 +1,7 @@
 open Ast
 open Tast
 
-exception Error
+let _dp = Lexing.dummy_pos
 
 module V = struct
   type t = tvar
@@ -9,60 +9,83 @@ module V = struct
   let equal v1 v2 = v1.id = v2.id
   let create = let r = ref 0 in fun () -> incr r; { id = !r; def = None }
 end
+module Smap = Map.Make(String)
+exception UnificationFailure of typ * typ
+let unification_error t1 t2 = raise (UnificationFailure (canon t1, canon t2))
+module Vset = Set.Make(V)
+module Vmap = Map.Make(V)
+  
+type schema = { vars: Vset.t; typ: typ }
+type env = { 
+  bindings: (schema * bool) Smap.t; 
+  fvars: Vset.t;
+  tvars: tvar Smap.t
+}
 
-let rec ttyp_of_typ = function
+let rec ttyp_of_typ env t = match t.x with 
 | TVar ("Any", []) -> TTAny
 | TVar ("Nothing", []) -> TTNothing
 | TVar ("Number", []) -> TTNumber
 | TVar ("String", []) -> TTString
 | TVar ("Boolean", []) -> TTBoolean
-| TVar ("List", [a]) -> TTList (ttyp_of_typ a)
-| TArrow (l, r) -> TTArrow (List.map ttyp_of_typ l, ttyp_of_typ r)
+| TVar ("List", [a]) -> TTList (ttyp_of_typ env a)
+| TArrow (l, r) -> TTArrow (List.map (ttyp_of_typ env) l, ttyp_of_typ env r)
+| TVar (v, []) -> begin try TTVar (Smap.find v env.tvars)
+  with Not_found -> raise (Error.Typer (_dp, _dp, fun () -> 
+    Printf.eprintf "unknown type variable %s\n" v))
+  end
 | TVar (v, _) -> 
-  Printf.eprintf "unknown type or incorrect type arguments for %s\n" v; raise Error
-  
-exception UnificationFailure of typ * typ
-let unification_error t1 t2 = raise (UnificationFailure (canon t1, canon t2))
+  raise (Error.Typer (_dp, _dp, fun () -> 
+    Printf.eprintf "incorrect type arguments for %s\n" v))
   
 let rec occur v t = 
   assert (v.def = None);
   match t with
 | TTArrow (a, b) -> List.exists (occur v) a || occur v b
-| TTVar w -> if w.def = None then v.id = w.id 
-  else occur v (head (TTVar w)) 
+| TTVar wexpr -> if wexpr.def = None then v.id = wexpr.id 
+  else occur v (head (TTVar wexpr)) 
 | _ -> false
 
-let rec unify t u = match head t, head u with
-| TTArrow (at, bt), TTArrow (au, bu) -> List.iter2 unify at au; unify bt bu
+let rec unify env force t u = match head t, head u with
+| TTAny, _ | _, TTAny -> ()
+| TTArrow (at, bt), TTArrow (au, bu) -> List.iter2 (unify env force) at au; unify env force bt bu
+| TTVar x, TTVar y when x = y -> ()
 | TTVar v, z | z, TTVar v -> if occur v z 
-  then raise (unification_error (TTVar v) z)
-  else v.def <- Some z
+  then unification_error (TTVar v) z
+  else if Smap.exists (fun _ x -> x = v) env.tvars then 
+  raise (Error.Typer (_dp, _dp, fun () -> 
+    Printf.eprintf "generalized variable cannot be unified\n"))
+  else if force then v.def <- Some z
 | TTNumber, TTNumber | TTString, TTString | TTBoolean, TTBoolean
-| TTNothing, TTNothing | TTAny,  TTAny -> ()
-| TTList a, TTList b -> unify a b
+| TTNothing, TTNothing -> ()
+| TTList a, TTList b -> unify env force a b
 | _ -> unification_error t u
 
-let rec unify_lt t u = match head t, head u with
-| TTArrow (at, bt), TTArrow (au, bu) -> List.iter2 unify_lt au at; unify_lt bt bu
-| TTVar v, z | z, TTVar v -> if occur v z 
-  then raise (unification_error (TTVar v) z)
-  else v.def <- Some z
+let rec unify_lt env force t u = match head t, head u with
+| _, TTAny -> ()
+| TTArrow (at, bt), TTArrow (au, bu) -> 
+  List.iter2 (unify_lt env force) au at; unify_lt env force bt bu
+| TTVar x, TTVar y when x = y -> ()
+| z, TTVar v -> if occur v z 
+  then unification_error (TTVar v) z
+  else if force then v.def <- Some z
+| TTVar v, z -> if occur v z 
+  then unification_error (TTVar v) z
+  else if Smap.exists (fun _ x -> x = v) env.tvars then 
+    raise (Error.Typer (_dp, _dp, fun () -> 
+      Printf.eprintf "generalized variable cannot be unified\n"))
+  else if force then 
+    ( v.def <- Some z)
 | TTNumber, TTNumber | TTString, TTString | TTBoolean, TTBoolean
-| TTNothing, TTNothing | _, TTAny -> ()
-| TTList a, TTList b -> unify_lt a b
+| TTNothing, TTNothing -> ()
+| TTList a, TTList b -> unify_lt env force a b
 | _ -> unification_error t u
-
-module Vset = Set.Make(V)
 
 let rec fvars t = match head t with
 | TTArrow (a, b) -> List.fold_left Vset.union (fvars b) (List.map fvars a)
-| TTVar w -> Vset.singleton w
+| TTVar wexpr -> Vset.singleton wexpr
 | TTList a -> fvars a
 | _ -> Vset.empty
-  
-type schema = { vars : Vset.t; typ : typ }
-module Smap = Map.Make(String)
-type env = { bindings : (schema * bool) Smap.t; fvars : Vset.t }
 
 let default = 
   let a = { id=0; def=None } in
@@ -79,28 +102,27 @@ let default =
     "fold", { vars = Vset.of_list [a; b]; typ=
       TTArrow ([TTArrow ([TTVar a; TTVar b], TTVar a); TTVar a; TTList (TTVar b)], TTVar a)}
   ] in
-  { bindings=List.fold_left (fun m (k, v) -> Smap.add k (v, false) m) Smap.empty l; fvars=Vset.empty}
+  { bindings=List.fold_left (fun m (k, v) -> Smap.add k (v, false) m) Smap.empty l; fvars=Vset.empty; tvars=Smap.empty }
 
 let norm_varset s =
   Vset.fold (fun v s -> Vset.union (fvars (TTVar v)) s) s Vset.empty
 
-let add gen x t b e =
-  if Smap.mem x e.bindings then 
-    (Printf.eprintf "var %s was already declared\n" x; raise Error);
+let add gen x t b env =
+  if Smap.mem x env.bindings then 
+    raise (Error.Typer (_dp, _dp, fun () -> 
+      Printf.eprintf "var %s was already declared\n" x));
   let vt = fvars t in
   let s, fvars =
     if gen then
-      let env_fvars = norm_varset e.fvars in
-      { vars = Vset.diff vt env_fvars; typ = t }, e.fvars
+      let env_fvars = norm_varset env.fvars in
+      { vars = Vset.diff vt env_fvars; typ = t }, env.fvars
     else
-      { vars = Vset.empty; typ = t }, Vset.union e.fvars vt
+      { vars = Vset.empty; typ = t }, Vset.union env.fvars vt
   in
-  { bindings = Smap.add x (s, b) e.bindings; fvars = fvars }
+  { bindings=Smap.add x (s, b) env.bindings; fvars=fvars; tvars=env.tvars }
 
-module Vmap = Map.Make(V)
-
-let find s e =
-  let scheme = fst (Smap.find s e.bindings) in
+let find s env =
+  let scheme = fst (Smap.find s env.bindings) in
   let m = Vset.fold (fun v vm -> Vmap.add v (V.create ()) vm) scheme.vars Vmap.empty in
   let rec refresh = function
   | TTArrow (a, b) -> TTArrow (List.map refresh a, refresh b)
@@ -109,104 +131,123 @@ let find s e =
   | x -> x in
   refresh scheme.typ
 
-let rec w e = function
+let rec wexpr env e = match e.x with
 | EConst (CBoolean _ as b) -> { e=TEConst b; t=TTBoolean }
 | EConst (CNumber _ as n) -> { e=TEConst n; t=TTNumber }
 | EConst (CString _ as s) -> { e=TEConst s; t=TTString }
 | EOp (b, l) -> 
   begin 
-    let ll = List.map (w e) l in
+    let ll = List.map (wexpr env) l in
     let tt = List.map (fun x -> x.t) ll in
     let t = match b with
     | BEq | BNeq -> TTBoolean
     | BLt | BLeq | BGt | BGeq -> 
-      List.iter (fun t -> unify_lt t TTNumber) tt; TTBoolean
+      List.iter (fun t -> unify_lt env true t TTNumber) tt; TTBoolean
     | BAdd -> 
-      (try List.iter (fun t -> unify_lt t TTNumber) tt; TTNumber with
-      | UnificationFailure _ ->  List.iter (unify_lt TTString) tt; TTString)
+      (try 
+        List.iter (fun t -> unify_lt env false t TTNumber) tt; 
+        List.iter (fun t -> unify_lt env true t TTNumber) tt;
+        TTNumber with
+      | UnificationFailure _ -> 
+        List.iter (fun t -> unify_lt env false t TTString) tt; 
+        List.iter (fun t -> unify_lt env true t TTString) tt;
+        TTString)
     | BSub | BMul | BDiv -> 
-      List.iter (fun t -> unify_lt t TTNumber) tt; TTNumber
+      List.iter (fun t -> unify_lt env true t TTNumber) tt; TTNumber
     | BAnd | BOr -> 
-      List.iter (fun t -> unify_lt t TTBoolean) tt; TTBoolean in
+      List.iter (fun t -> unify_lt env true t TTBoolean) tt; TTBoolean in
     { e=TEOp (b, ll); t=t }
   end
-| EVar v -> begin try { e=TEVar v; t=find v e }
-  with Not_found -> Printf.eprintf "unbound variable %s\n" v; raise Error end
-| EBlock b -> let bb, t = checkblock e b in 
+| EVar v -> begin try { e=TEVar v; t=find v env }
+  with Not_found -> raise (Error.Typer (e.sp, e.ep, fun () -> 
+    Printf.eprintf "unbound variable %s\n" v)) end
+| EBlock b -> let bb, t = wblock env b in 
   { e=TEBlock bb; t=t }
 | EIf (l, eb) -> 
-  let ll = List.map (fun (c, cb) -> (w e c, checkblock e cb)) l in
-  let eeb, t = checkblock e eb in
+  let ll = List.map (fun (c, cb) -> (wexpr env c, wblock env cb)) l in
+  let eeb, t = wblock env eb in
   { e=TEIf (List.map (fun (cc, (ccb, cbt)) -> 
-    unify_lt cc.t TTBoolean; unify cbt t; (cc, ccb)) ll, eeb); t=t }
-| ECall (CVar f, l) -> begin match (try find f e with Not_found -> 
-    Printf.eprintf "unbound variable %s\n" f; raise Error) with
-  | TTArrow (lt, rt) -> let ll = List.map (w e) l in
-    (try List.iter2 unify_lt (List.map (fun x -> x.t) ll) lt
-    with Invalid_argument _ -> Printf.eprintf "incorrect number of arguments for %s\n" f; raise Error);
-    { e=TECall (TCVar f, ll); t=rt } 
+    unify_lt env true cc.t TTBoolean; unify env true cbt t; (cc, ccb)) ll, eeb); t=t }
+| ECall ({ x=CVar f; sp=_; ep=_ }, l) -> 
+  begin match (try find f env with Not_found -> 
+    raise (Error.Typer (e.sp, e.ep, fun () -> 
+      Printf.eprintf "unbound variable %s\n" f))) with
+  | TTArrow (lt, rt) -> let ll = List.map (wexpr env) l in
+    begin try 
+      List.iter2 (unify_lt env true) (List.map (fun x -> x.t) ll) lt;
+      { e=TECall (TCVar f, ll); t=rt } 
+    with Invalid_argument _ -> raise (Error.Typer (e.sp, e.ep, fun () -> 
+      Printf.eprintf "incorrect number of arguments for %s\n" f))
+    end
     (* ecall ccall !! *)
-  | _ -> Printf.eprintf "%s should have an arrow type\n" f; raise Error 
+  | _ -> raise (Error.Typer (e.sp, e.ep, fun () -> 
+    Printf.eprintf "%s should have an arrow type\n" f)) 
 end
-| ECases (TVar ("List", [a]), c, ["empty", [], eb; "link", [x; y], lb])
-| ECases (TVar ("List", [a]), c, ["link", [x; y], lb; "empty", [], eb]) -> 
-  let aa = ttyp_of_typ a in
-  let cc = w e c in
-  unify_lt cc.t (TTList aa);
-  let ee = (if x = "_" then (fun u -> u) else add false x aa false)
-    ((if y = "_" then (fun u -> u) else add false y (TTList aa) false) e) in
-  let (eeb, et), (llb, lt) = checkblock ee eb, checkblock ee lb in 
-  unify et lt;
+| ECases ({ x=TVar ("List", [a]); sp=_; ep=_ }, c, ["empty", [], eb; "link", [x; y], lb])
+| ECases ({ x=TVar ("List", [a]); sp=_; ep=_ }, c, ["link", [x; y], lb; "empty", [], eb]) -> 
+  let aa = ttyp_of_typ env a in
+  let cc = wexpr env c in
+  unify_lt env true cc.t (TTList aa);
+  let env' = (if x = "_" then (fun u -> u) else add false x aa false)
+    ((if y = "_" then (fun u -> u) else add false y (TTList aa) false) env) in
+  let (eeb, et), (llb, lt) = wblock env' eb, wblock env' lb in 
+  unify env true et lt;
   { e=TECases (cc, ["empty", [], eeb; "link", [x; y], llb]); t=lt }
 | ELam (pl, t, b) ->
-  let tt = ttyp_of_typ t in
-  let ppl = List.map (fun (p, pt) -> (p, ttyp_of_typ pt)) pl in
-  let ee = List.fold_left (fun e (p, pt) -> add false p pt false e) e ppl in
-  let bb, bt = checkblock ee b in
-  unify_lt bt tt;
+  let tt = ttyp_of_typ env t in
+  let ppl = List.map (fun (p, pt) -> (p, ttyp_of_typ env pt)) pl in
+  let env' = List.fold_left (fun env (p, pt) -> add false p pt false env) env ppl in
+  let bb, bt = wblock env' b in
+  unify_lt env true bt tt;
   { e=TELam (ppl, bb); t=TTArrow (List.map snd ppl, tt) }
-| _ -> Printf.eprintf "TODO\n"; raise Error
-and checkblock e b = match b with
+| _ -> raise (Error.Typer (e.sp, e.ep, fun () -> 
+  Printf.eprintf "TODO\n"))
+and wblock env = function
 | [] -> assert false
-| [s] -> let ss, _ = checkstmt e s in
+| [s] -> let ss, _ = wstmt env s in
   [ss], (match ss with TSExpr ex | TSAssign (_, ex) -> ex.t | _ -> TTNothing)
-| s::bb -> let ss, ee = checkstmt e s in
-  let l, t = checkblock ee bb in
+| s::bb -> let ss, env' = wstmt env s in
+  let l, t = wblock env' bb in
   ss::l, t
-and checkstmt e = function 
-| SExpr ex -> TSExpr (w e ex), e
+and wstmt env s = match s.x with 
+| SExpr ex -> TSExpr (wexpr env ex), env
 | SDecl (b, x, t, ex) -> 
-  let s = w e ex in
+  let s = wexpr env ex in
   begin match t with 
   | None -> ()
-  | Some a -> unify_lt s.t (ttyp_of_typ a)
+  | Some a -> unify_lt env true s.t (ttyp_of_typ env a)
   end;
-  TSDecl (x, s), add (not b) x s.t b e
+  TSDecl (x, s), add (not b) x s.t b env
 | SAssign (x, ex) ->
-  begin try let s = w e ex in 
-    if snd (Smap.find x e.bindings) then begin
-      unify_lt s.t (find x e); TSAssign (x, s), e
-    end else begin Printf.eprintf "variable %s is read-only\n" x; raise Error
+  begin try let ss = wexpr env ex in 
+    if snd (Smap.find x env.bindings) then begin
+      unify_lt env true ss.t (find x env); TSAssign (x, ss), env
+    end else begin raise (Error.Typer (s.sp, s.ep, fun () -> 
+      Printf.eprintf "variable %s is read-only\n" x))
     end
   with Not_found -> 
-    Printf.eprintf "unbound variable %s\n" x; raise Error end
+    raise (Error.Typer (s.sp, s.ep, fun () -> 
+      Printf.eprintf "unbound variable %s\n" x)) end
 | SFun (f, tl, (pl, t, b)) ->
-  let ttl = List.map (fun v -> 
+  let vars = List.fold_left (fun m v-> 
     if List.mem v ["Any"; "Nothing"; "Number"; "String"; "Boolean"; "List"] then
-      (Printf.eprintf "name already taken %s\n" v; raise Error) 
-    else TTVar (V.create ())) tl in
-  let _ = ttl in
-  let tt = ttyp_of_typ t in
-  let ppl = List.map (fun (p, pt) -> (p, ttyp_of_typ pt)) pl in
-  let ee = add false f (TTArrow (List.map snd ppl, tt)) false e in
-  let eee = List.fold_left (fun e (p, pt) -> add false p pt false e) ee ppl in
-  let bb, bt = checkblock eee b in
-  unify_lt bt tt;
-  TSFun (f, tl, (ppl, bb)), ee 
-let check f = 
-  try let b, _ = checkblock default f in b
+      (raise (Error.Typer (s.sp, s.ep, fun () -> 
+        Printf.eprintf "name already taken %s\n" v)))
+    else Smap.add v (V.create ()) m) env.tvars tl in
+  let env' = { env with tvars = vars } in
+  let tt = ttyp_of_typ env' t in
+  let ppl = List.map (fun (p, pt) -> (p, ttyp_of_typ env' pt)) pl in
+  let env'' = add true f (TTArrow (List.map snd ppl, tt)) false env' in
+  let env''' = List.fold_left (fun aenv (p, pt) -> add false p pt false aenv) env'' ppl in
+  let bb, bt = wblock env''' b in
+  unify_lt env''' true bt tt;
+  TSFun (f, tl, (ppl, bb)), env''
+let w f = 
+  try let b, _ = wblock default f in b
   with 
   | Not_found -> 
-    Printf.eprintf "not found at the end of check\n"; raise Error
+    raise (Error.Typer (_dp, _dp, fun () -> 
+      Printf.eprintf "not found at the end of w\n"))
   | UnificationFailure _ -> 
-    Printf.eprintf "unif at the end of check\n"; raise Error
+    raise (Error.Typer (_dp, _dp, fun () -> 
+      Printf.eprintf "unif at the end of w\n"))

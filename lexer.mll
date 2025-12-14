@@ -3,8 +3,6 @@
   open Ast
   open Parser
 
-  exception Error
-
   let cdepth = ref 0
   let keywords = Hashtbl.create 17
   let () = 
@@ -12,14 +10,15 @@
     "end"; "for"; "from"; "fun"; "if"; "else if"; "else"; "lam"; "true"; 
     "false"]
   let notkw s =
-    if Hashtbl.mem keywords s then begin
-      Printf.eprintf "unexpected keyword < %s >\n" s;
-      raise Error
-    end else s
+    if Hashtbl.mem keywords s then raise (Error.Lexer (fun () -> 
+      Printf.eprintf "unexpected keyword \"%s\"\n" s))
+    else s
+  let line lb =
+    String.iter (fun c -> if c = '\n' then new_line lb) (Lexing.lexeme lb)
 }
 
-let linecomment = "#\n" | "#" [^ '|'] [^ '\n']*
-let ws = [' ' '\t' '\n']+
+let ws = [' ' '\t' '\n']
+let linecomment = "#\n" | "#" [^ '|'] [^ '\n']* 
 let osef = (ws | linecomment)*
 let digit     = ['0'-'9']
 let integer = ("+" | "-")? digit+
@@ -38,41 +37,41 @@ rule comment = parse
   decr cdepth;
   if !cdepth = 0 then token lexbuf 
   else comment lexbuf }
-| eof { Printf.eprintf "unending comment"; raise Error }
+| eof { raise (Error.Lexer (fun () -> Printf.eprintf "unending comment")) }
 | _ { comment lexbuf }
 and token = parse
-| osef { token lexbuf }
-| linecomment eof | "#" eof { EOF }
+| osef { line lexbuf; token lexbuf }
+| "#" eof { EOF }
 | "#|" { incr cdepth; comment lexbuf }
-| "|#" { Printf.eprintf "unmatched |#"; raise Error }
+| "|#" { raise (Error.Lexer (fun () -> Printf.eprintf "unmatched |#")) }
 
 | "false" { CONST (CBoolean false) }
 | "true" { CONST (CBoolean true)}
 | integer as s { CONST (CNumber (int_of_string s)) }
 | string as s { CONST (CString (String.sub s 1 (String.length s - 2)))}
 
-| ws"=="ws { CMP BEq } | ws"<>"ws { CMP BNeq }
-| ws"<"ws { LT } | ws"<="ws { CMP BLeq } 
-| ws">"ws { GT } | ws">="ws { CMP BGeq }
-| ws"+"ws { CMP BAdd } | ws"-"ws { CMP BSub } 
-| ws"*"ws { CMP BMul } | ws"/"ws { CMP BDiv }
-| ws"and"ws { CMP BAnd }  | ws"or"ws { CMP BOr }
+| ws"=="ws { line lexbuf; CMP BEq } | ws"<>"ws { line lexbuf; CMP BNeq }
+| ws"<"ws { line lexbuf; LT } | ws"<="ws { line lexbuf; CMP BLeq } 
+| ws">"ws { line lexbuf; GT } | ws">="ws { line lexbuf; CMP BGeq }
+| ws"+"ws { line lexbuf; CMP BAdd } | ws"-"ws { line lexbuf; CMP BSub } 
+| ws"*"ws { line lexbuf; CMP BMul } | ws"/"ws { line lexbuf; CMP BDiv }
+| ws"and"ws { line lexbuf; CMP BAnd }  | ws"or"ws { line lexbuf; CMP BOr }
 
 | ":" { COLON } 
 | "," { COMMA } | "=" { EQUAL }
-| "=>" ws { DARROW }
+| "=>"ws { line lexbuf; DARROW }
 | "<" { LA } | ">" { RA }
 | "->" { ARROW }
 | "|" { BAR }
 
 | ")(" { RPLP }
-| ws"(" { SLP }
+| ws"(" { line lexbuf; SLP }
 
 | "(" { LP } | ")" { RP }
 
 | "var" { VAR }
 | "block:" { BLOCK } 
-| "cases" osef "(" { CASES }
+| "cases" osef "(" { line lexbuf; CASES }
 | "end" { END } 
 | "for" { FOR }
 | "from" { FROM }
@@ -82,18 +81,16 @@ and token = parse
 | "else:" { ELSE }
 | "lam(" { LAM }
 
-| ident as i osef ":: " { IDENTCOLONCOLON (notkw i) }
-| ident as i osef "=" { IDENTEQUAL (notkw i) }
-| ident as i osef "=>\n" | ident as i osef "=> " { IDENTDARROW (notkw i) }
+| ident as i osef ":: " { line lexbuf; IDENTCOLONCOLON (notkw i) }
+| ident as i osef "=" { line lexbuf; IDENTEQUAL (notkw i) }
+| ident as i osef "=>"ws { line lexbuf; IDENTDARROW (notkw i) }
 | ident as i " == " { IDENTEQ (notkw i) }
-| ident as i osef ":=" { IDENTCOLONEQUAL (notkw i) }
+| ident as i osef ":=" { line lexbuf; IDENTCOLONEQUAL (notkw i) }
 | ident as i "(" { IDENTLP (notkw i) }
 | ident as i { IDENT (notkw i) }
 
 | eof { EOF }
 | _ { 
-  let p = lexbuf.lex_curr_p in
-  Printf.eprintf "%d:%d : <$ %s $> cant be matched to a token\n"
-    p.pos_lnum (p.pos_cnum - p.pos_bol) (Lexing.lexeme lexbuf);
-  raise Error
- }
+  raise (Error.Lexer (fun () -> 
+    Printf.eprintf "\"%s\" cant be matched to a token\n" (Lexing.lexeme lexbuf)))
+}
