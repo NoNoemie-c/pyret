@@ -48,7 +48,9 @@ let rec occur v t =
 
 let rec unify env force t u = match head t, head u with
 | TTAny, _ | _, TTAny -> ()
-| TTArrow (at, bt), TTArrow (au, bu) -> List.iter2 (unify env force) at au; unify env force bt bu
+| TTArrow (at, bt), TTArrow (au, bu) -> 
+  List.iter2 (unify env force) at au; 
+  unify env force bt bu
 | TTVar x, TTVar y when x = y -> ()
 | TTVar v, z | z, TTVar v -> if occur v z 
   then unification_error (TTVar v) z
@@ -92,17 +94,21 @@ let default =
   let b = { id=1; def=None } in
   let l = [
     "nothing", { vars=Vset.empty; typ=TTNothing };
-    "num-modulo", { vars=Vset.empty; typ=TTArrow ([TTNumber; TTNumber], TTNumber) };
+    "num-modulo", { vars=Vset.empty; 
+      typ=TTArrow ([TTNumber; TTNumber], TTNumber) };
     "empty", { vars=Vset.singleton a; typ=TTList (TTVar a) };
-    "link", { vars=Vset.singleton a; typ=TTArrow ([TTVar a; TTList (TTVar a)], TTList (TTVar a))};
+    "link", { vars=Vset.singleton a; 
+      typ=TTArrow ([TTVar a; TTList (TTVar a)], TTList (TTVar a))};
     "print", { vars=Vset.singleton a; typ=TTArrow ([TTVar a], TTVar a)};
     "raise", { vars=Vset.singleton a; typ=TTArrow ([TTString], TTVar a)};
     "each", { vars=Vset.of_list [a; b]; typ=
       TTArrow ([TTArrow ([TTVar a], TTVar b); TTList (TTVar a)], TTNothing)};
     "fold", { vars = Vset.of_list [a; b]; typ=
-      TTArrow ([TTArrow ([TTVar a; TTVar b], TTVar a); TTVar a; TTList (TTVar b)], TTVar a)}
+      TTArrow ([TTArrow ([TTVar a; TTVar b], TTVar a); 
+        TTVar a; TTList (TTVar b)], TTVar a)}
   ] in
-  { bindings=List.fold_left (fun m (k, v) -> Smap.add k (v, false) m) Smap.empty l; fvars=Vset.empty; tvars=Smap.empty }
+  { bindings=List.fold_left (fun m (k, v) -> Smap.add k (v, false) m) 
+    Smap.empty l; fvars=Vset.empty; tvars=Smap.empty }
 
 let norm_varset s =
   Vset.fold (fun v s -> Vset.union (fvars (TTVar v)) s) s Vset.empty
@@ -123,7 +129,8 @@ let add gen x t b env =
 
 let find s env =
   let scheme = fst (Smap.find s env.bindings) in
-  let m = Vset.fold (fun v vm -> Vmap.add v (V.create ()) vm) scheme.vars Vmap.empty in
+  let m = Vset.fold (fun v vm -> Vmap.add v (V.create ()) vm) 
+    scheme.vars Vmap.empty in
   let rec refresh = function
   | TTArrow (a, b) -> TTArrow (List.map refresh a, refresh b)
   | TTList a -> TTList (refresh a)
@@ -167,7 +174,8 @@ let rec wexpr env e = match e.x with
   let ll = List.map (fun (c, cb) -> (wexpr env c, wblock env cb)) l in
   let eeb, t = wblock env eb in
   { e=TEIf (List.map (fun (cc, (ccb, cbt)) -> 
-    unify_lt env true cc.t TTBoolean; unify env true cbt t; (cc, ccb)) ll, eeb); t=t }
+    unify_lt env true cc.t TTBoolean; 
+    unify env true cbt t; (cc, ccb)) ll, eeb); t=t }
 | ECall ({ x=CVar f; sp=_; ep=_ }, l) -> 
   begin match (try find f env with Not_found -> 
     raise (Error.Typer (e.sp, e.ep, fun () -> 
@@ -185,7 +193,8 @@ let rec wexpr env e = match e.x with
 | ECall ({ x=CCall (c, p); sp=sp; ep=ep }, l) -> 
   let ec = wexpr env ({ x=ECall (c, p); sp=sp; ep=ep }) in
   begin match ec with
-  | { e=TECall (cc, pp); t=TTArrow (lt, rt) } -> let ll = List.map (wexpr env) l in
+  | { e=TECall (cc, pp); t=TTArrow (lt, rt) } -> 
+    let ll = List.map (wexpr env) l in
     begin try 
       List.iter2 (unify_lt env true) (List.map (fun x -> x.t) ll) lt;
       { e=TECall (TCCall (cc, pp), ll); t=rt } 
@@ -195,8 +204,10 @@ let rec wexpr env e = match e.x with
   | _ -> raise (Error.Typer (e.sp, e.ep, fun () -> 
     Printf.eprintf "expr should have an arrow type\n")) 
   end
-| ECases ({ x=TVar ("List", [a]); sp=_; ep=_ }, c, ["empty", [], eb; "link", [x; y], lb])
-| ECases ({ x=TVar ("List", [a]); sp=_; ep=_ }, c, ["link", [x; y], lb; "empty", [], eb]) -> 
+| ECases ({ x=TVar ("List", [a]); sp=_; ep=_ }, 
+  c, ["empty", [], eb; "link", [x; y], lb])
+| ECases ({ x=TVar ("List", [a]); sp=_; ep=_ }, 
+  c, ["link", [x; y], lb; "empty", [], eb]) -> 
   let aa = ttyp_of_typ env a in
   let cc = wexpr env c in
   unify_lt env true cc.t (TTList aa);
@@ -208,7 +219,8 @@ let rec wexpr env e = match e.x with
 | ELam (pl, t, b) ->
   let tt = ttyp_of_typ env t in
   let ppl = List.map (fun (p, pt) -> (p, ttyp_of_typ env pt)) pl in
-  let env' = List.fold_left (fun env (p, pt) -> add false p pt false env) env ppl in
+  let env' = List.fold_left 
+    (fun env (p, pt) -> add false p pt false env) env ppl in
   let bb, bt = wblock env' b in
   unify_lt env true bt tt;
   { e=TELam (ppl, bb); t=TTArrow (List.map snd ppl, tt) }
@@ -250,7 +262,8 @@ and wstmt env s = match s.x with
   let tt = ttyp_of_typ env' t in
   let ppl = List.map (fun (p, pt) -> (p, ttyp_of_typ env' pt)) pl in
   let env'' = add true f (TTArrow (List.map snd ppl, tt)) false env' in
-  let env''' = List.fold_left (fun aenv (p, pt) -> add false p pt false aenv) env'' ppl in
+  let env''' = List.fold_left 
+    (fun aenv (p, pt) -> add false p pt false aenv) env'' ppl in
   let bb, bt = wblock env''' b in
   unify_lt env''' true bt tt;
   TSFun (f, tl, (ppl, bb)), env''

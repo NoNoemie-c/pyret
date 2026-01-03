@@ -14,11 +14,10 @@
 %token <Ast.const> CONST
 %token <Ast.binop> CMP
 %token <Ast.var> IDENT IDENTLP IDENTCOLONEQUAL IDENTEQUAL 
-  IDENTCOLONCOLON IDENTDARROW IDENTEQ
+  IDENTCOLONCOLON IDENTDARROW
 %token EOF
-%token LP RP RPLP LA RA LT GT
+%token LP RP SLP RPLP LA RA LT GT
 %token COMMA EQUAL COLON ARROW DARROW BAR
-%token BLOCK CASES IF ELSEIF ELSE END FOR FROM FUN LAM VAR
 
 %start file
 %type <Ast.file> file
@@ -35,7 +34,9 @@ voidstmt:
 | b=boption(VAR) i=IDENTCOLONCOLON t=typ EQUAL e=bexpr 
   { { x=SDecl (b, i, Some t, e); sp=$startpos; ep=$endpos } }
 | b=boption(VAR) i=IDENTCOLONCOLON t=IDENTEQUAL e=bexpr 
-  { { x=SDecl (b, i, Some ({x=TVar (t, []); sp=$startpos(b); ep=$endpos(b) }), e); sp=$startpos; ep=$endpos } }
+  { { x=SDecl (b, i, Some ({
+    x=TVar (t, []); 
+    sp=$startpos(b); ep=$endpos(b) }), e); sp=$startpos; ep=$endpos } }
 | FUN i=IDENTLP f=funbody { { x=SFun (i, [], f); sp=$startpos; ep=$endpos } }
 | FUN i=IDENT either(LA, LT) l=separated_nonempty_list(COMMA, IDENT) RA
   LP f=funbody { { x=SFun (i, l, f); sp=$startpos; ep=$endpos } }
@@ -52,34 +53,23 @@ block:
 | s=stmt b=block | s=voidstmt b=block
 { sep_stmt $endpos(s) $startpos(b); s::b }
 
-opexpr:
-| e=expr b=binop LP el=opexpr RP { { x=EOp (b, [e; el]); sp=$startpos; ep=$endpos } }
-| e=expr b=binop el=bexpr { {
-  x=(match el.x with 
-  | EOp (bl, l) when bl = b -> EOp (b, e::l) 
-  | EOp _ -> raise (Error.Parser ($startpos(el), $endpos(el), fun () ->
-    Printf.eprintf "operator doesnt match the one found on its left"))
-  | _ -> EOp (b, [e; el]));
-  sp=$startpos; ep=$endpos 
-} }
-| i=IDENTEQ el = bexpr { {
-  x=(match el.x with 
-  | EOp (BEq, l) -> EOp (BEq, { x=EVar i; sp=$startpos(i); ep=$endpos(i) }::l) 
-  | EOp _ -> raise (Error.Parser ($startpos(el), $endpos(el), fun () ->
-    Printf.eprintf "operator doesnt match the one found on its left"))
-  | _ -> EOp (BEq, [{ x=EVar i; sp=$startpos(i); ep=$endpos(i) }; el]));
-  sp=$startpos; ep=$endpos 
-} }
-
 bexpr:
-| e=opexpr | e=expr { e }
+| e=expr l=list(b=binop el=expr { (b, el) }) { {
+  x=(if l = [] then e.x
+    else let b = fst (List.hd l) in
+      if List.exists (fun (bb, _) -> bb <> b) l then 
+        raise (Error.Parser ($startpos(l), $endpos(l), fun () ->
+        Printf.eprintf "operator mismatch"))
+      else EOp (b, e::List.map snd l));
+  sp=$startpos; ep=$endpos 
+} }
 
 ublock:
 | COLON b=voidblock { b }
 | BLOCK b=block { b }
 
 typ:
-| LP l=separated_list(COMMA, typ) ARROW r=typ RP { { x=TArrow (l, r); sp=$startpos; ep=$endpos } }
+| anyLP l=separated_list(COMMA, typ) ARROW r=typ RP { { x=TArrow (l, r); sp=$startpos; ep=$endpos } }
 | i=IDENT l=loption(LA x=separated_nonempty_list(COMMA, typ) either(GT, RA) { x }) 
 { { x=TVar (i, l); sp=$startpos; ep=$endpos } }
 
@@ -92,9 +82,11 @@ funbody:
 
 either (a, b):
 | a { } | b { }
+anyLP: 
+| SLP | LP { }
 expr:
 | c=CONST { { x=EConst c; sp=$startpos; ep=$endpos } }
-| LP e=opexpr RP { e }
+| anyLP e=bexpr RP { e }
 | BLOCK b=block END { { x=EBlock b; sp=$startpos; ep=$endpos } }
 | CASES t=typ RP e=bexpr BLOCK
   l=list(branch) END
